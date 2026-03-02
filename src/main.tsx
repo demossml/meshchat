@@ -5,8 +5,15 @@ import './index.css'
 
 function applyViewportMetrics() {
   const root = document.documentElement
-  const viewportHeight = Math.round(window.visualViewport?.height ?? window.innerHeight)
-  root.style.setProperty('--app-vh', `${viewportHeight}px`)
+  const vv = window.visualViewport
+  const viewportHeight = vv?.height ?? window.innerHeight
+  const viewportTop = vv?.offsetTop ?? 0
+  const appHeight = Math.round(viewportHeight + viewportTop)
+  const keyboardInset = Math.max(0, Math.round(window.innerHeight - appHeight))
+
+  root.style.setProperty('--app-vh', `${appHeight}px`)
+  root.style.setProperty('--keyboard-inset', `${keyboardInset}px`)
+  root.classList.toggle('keyboard-open', keyboardInset > 120)
 
   // Telegram WebApp может отдавать safe-area отдельно от CSS env().
   const telegram = (window as Window & {

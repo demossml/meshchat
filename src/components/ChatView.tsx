@@ -386,9 +386,29 @@ export function ChatView() {
         <span className="truncate font-[var(--display)] text-[13px] font-semibold tracking-[0.04em] sm:text-[14px]" style={{ color: chColor }}>
           # {activeChannel}
         </span>
-        <Badge variant="outline" className="h-5 shrink-0 border-zinc-700 bg-zinc-900 px-2 text-[10px] tracking-[0.02em] text-zinc-500">
-          {msgs.length} пакетов
-        </Badge>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 border-zinc-700 bg-zinc-900 px-2 text-[9px] tracking-[0.06em] text-zinc-300 hover:bg-zinc-800"
+            onClick={() => setShowGroupWizard(true)}
+            title="Создать или настроить группу"
+          >
+            GROUP
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="hidden h-6 border-zinc-700 bg-zinc-900 px-2 text-[9px] tracking-[0.06em] text-zinc-300 hover:bg-zinc-800 min-[420px]:inline-flex"
+            onClick={() => setScanGroupQr(true)}
+            title="Сканировать QR-приглашение группы"
+          >
+            SCAN QR
+          </Button>
+          <Badge variant="outline" className="h-5 border-zinc-700 bg-zinc-900 px-2 text-[10px] tracking-[0.02em] text-zinc-500">
+            {msgs.length} пакетов
+          </Badge>
+        </div>
       </div>
       <div className="flex gap-1.5 overflow-x-auto border-b border-zinc-900 bg-zinc-950 px-2.5 py-1.5 md:hidden">
         {channels.map(ch => {
@@ -449,7 +469,7 @@ export function ChatView() {
       </div>
 
       {/* Input */}
-      <div className="flex-shrink-0 border-t border-zinc-800 bg-zinc-950 px-2.5 py-2 sm:px-3 sm:pb-2">
+      <div className="chat-composer-wrap flex-shrink-0 border-t border-zinc-800 bg-zinc-950 px-2.5 py-2 sm:px-3 sm:pb-2">
         {verifyInfo && (
           <div className="mb-2 rounded-md border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-[10px] text-zinc-300">
             {verifyInfo}
@@ -741,7 +761,7 @@ export function ChatView() {
           </span>
           <Textarea
             ref={inputRef}
-            className="min-h-10 max-h-[120px] flex-1 resize-none border-none bg-transparent py-1.5 text-[13px] leading-[1.4] text-zinc-100 outline-none placeholder:text-zinc-600 focus-visible:ring-0"
+            className="min-h-10 max-h-[120px] flex-1 resize-none border-none bg-transparent py-1.5 text-[16px] leading-[1.4] text-zinc-100 outline-none placeholder:text-zinc-600 focus-visible:ring-0 sm:text-[13px]"
             value={inputText}
             onChange={e => setInputText(e.target.value)}
             onKeyDown={onKey}

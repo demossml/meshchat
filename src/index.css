@@ -11,6 +11,8 @@
   --safe-top: max(env(safe-area-inset-top), var(--tg-safe-top));
   --safe-bottom: max(env(safe-area-inset-bottom), var(--tg-safe-bottom));
   --app-vh: 100dvh;
+  --keyboard-inset: 0px;
+  --safe-bottom-active: var(--safe-bottom);
   --header-h: calc(3.5rem + var(--safe-top));
   --bg0:  #09090b;
   --bg1:  #111113;
@@ -54,6 +56,23 @@
 html, body, #root { height: 100%; min-height: 100svh; overflow: hidden; background: var(--bg0); }
 html, body, #root { min-height: var(--app-vh); }
 body { font-family: var(--mono); font-size: 13px; color: var(--t1); -webkit-font-smoothing: antialiased; }
+html, body { overscroll-behavior: none; }
+
+:root.keyboard-open {
+  --safe-bottom-active: 0px;
+}
+
+.chat-composer-wrap {
+  padding-bottom: var(--safe-bottom-active);
+}
+
+@media (max-width: 767px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
 
 /* ── Scrollbar ───────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 3px; height: 3px; }
