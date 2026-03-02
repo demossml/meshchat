@@ -43,6 +43,13 @@ interface AppState {
   e2eeEnabled:  boolean
   e2eePassphrase: string
   noiseDmEnabled: boolean
+  onboardingCompleted: boolean
+  securityEnabled: boolean
+  securityUnlocked: boolean
+  securityPinHash: string | null
+  securityPinSalt: string | null
+  securityBiometricEnabled: boolean
+  securityCredentialId: string | null
 
   // ── Actions ──
   connect:    (cfg: ConnectConfig) => void
@@ -83,6 +90,12 @@ interface AppState {
   setE2EEEnabled:   (v: boolean) => void
   setE2EEPassphrase:(v: string) => void
   setNoiseDmEnabled:(v: boolean) => void
+  completeOnboarding: () => void
+  setSecurityPin: (hash: string, salt: string) => void
+  disableSecurity: () => void
+  lockSecurity: () => void
+  unlockSecurity: () => void
+  setSecurityBiometric: (enabled: boolean, credentialId?: string | null) => void
   loadDemo:         () => void
 }
 
@@ -199,6 +212,13 @@ export const useStore = create<AppState>()(
           e2eeEnabled:  false,
           e2eePassphrase: '',
           noiseDmEnabled: false,
+          onboardingCompleted: false,
+          securityEnabled: false,
+          securityUnlocked: false,
+          securityPinHash: null,
+          securityPinSalt: null,
+          securityBiometricEnabled: false,
+          securityCredentialId: null,
 
           // ── Connection ──────────────────────────────────────────
 
@@ -336,6 +356,8 @@ export const useStore = create<AppState>()(
 
                   own.status = 'ack'
                   own.ack = true
+                  own.sentAt = own.sentAt ?? own.ts
+                  own.ackAt = own.ackAt ?? now
                   own.networkMsgId = msgId
                   own.deliveredAt = undefined
                   own.readAt = undefined
@@ -467,6 +489,7 @@ export const useStore = create<AppState>()(
               status:   'queued',
               ack:      false,
               clientMsgId,
+              sendAttempts: 0,
               secureMode: opts?.secureMode,
               encrypted: opts?.encrypted === true,
             }
@@ -484,9 +507,22 @@ export const useStore = create<AppState>()(
               if (!msg) continue
               msg.status = status
               msg.ack = status === 'ack' || status === 'delivered' || status === 'read'
+              if (status === 'queued') {
+                msg.sendAttempts = Math.max(1, msg.sendAttempts ?? 0)
+              } else if (status === 'sent') {
+                msg.sentAt = msg.sentAt ?? now
+                msg.sendAttempts = Math.max(1, msg.sendAttempts ?? 0)
+              } else if (status === 'ack') {
+                msg.sentAt = msg.sentAt ?? msg.ts
+                msg.ackAt = msg.ackAt ?? now
+              }
               if (status === 'delivered') {
+                msg.sentAt = msg.sentAt ?? msg.ts
+                msg.ackAt = msg.ackAt ?? now
                 msg.deliveredAt = msg.deliveredAt ?? now
               } else if (status === 'read') {
+                msg.sentAt = msg.sentAt ?? msg.ts
+                msg.ackAt = msg.ackAt ?? now
                 msg.deliveredAt = msg.deliveredAt ?? now
                 msg.readAt = msg.readAt ?? now
               } else if (status === 'queued' || status === 'sent' || status === 'ack') {
@@ -510,8 +546,12 @@ export const useStore = create<AppState>()(
                 msg.status = status
                 msg.ack = status === 'ack' || status === 'delivered' || status === 'read'
                 if (status === 'delivered') {
+                  msg.sentAt = msg.sentAt ?? msg.ts
+                  msg.ackAt = msg.ackAt ?? now
                   msg.deliveredAt = msg.deliveredAt ?? now
                 } else if (status === 'read') {
+                  msg.sentAt = msg.sentAt ?? msg.ts
+                  msg.ackAt = msg.ackAt ?? now
                   msg.deliveredAt = msg.deliveredAt ?? now
                   msg.readAt = msg.readAt ?? now
                 }
@@ -532,6 +572,12 @@ export const useStore = create<AppState>()(
               inFlight: false,
               lastError: undefined,
             })
+            for (const list of Object.values(s.messages)) {
+              const msg = list.find(item => item.clientMsgId === entry.clientMsgId)
+              if (!msg) continue
+              msg.sendAttempts = Math.max(1, msg.sendAttempts ?? 0)
+              break
+            }
           }),
 
           markOutboxInFlight: (clientMsgId, inFlight) => set(s => {
@@ -547,6 +593,12 @@ export const useStore = create<AppState>()(
             item.nextRetryAt = nextRetryAt
             item.inFlight = false
             item.lastError = lastError
+            for (const list of Object.values(s.messages)) {
+              const msg = list.find(entry => entry.clientMsgId === clientMsgId)
+              if (!msg) continue
+              msg.sendAttempts = Math.max(msg.sendAttempts ?? 1, item.attempts + 1)
+              break
+            }
           }),
 
           removeOutbox: (clientMsgId) => set(s => {
@@ -658,6 +710,33 @@ export const useStore = create<AppState>()(
           setE2EEEnabled: (v) => set(s => { s.e2eeEnabled = v }),
           setE2EEPassphrase: (v) => set(s => { s.e2eePassphrase = v }),
           setNoiseDmEnabled: (v) => set(s => { s.noiseDmEnabled = v }),
+          completeOnboarding: () => set(s => { s.onboardingCompleted = true }),
+          setSecurityPin: (hash, salt) => set(s => {
+            s.securityEnabled = true
+            s.securityUnlocked = true
+            s.securityPinHash = hash
+            s.securityPinSalt = salt
+          }),
+          disableSecurity: () => set(s => {
+            s.securityEnabled = false
+            s.securityUnlocked = false
+            s.securityPinHash = null
+            s.securityPinSalt = null
+            s.securityBiometricEnabled = false
+            s.securityCredentialId = null
+          }),
+          lockSecurity: () => set(s => {
+            if (!s.securityEnabled) return
+            s.securityUnlocked = false
+          }),
+          unlockSecurity: () => set(s => {
+            if (!s.securityEnabled) return
+            s.securityUnlocked = true
+          }),
+          setSecurityBiometric: (enabled, credentialId = null) => set(s => {
+            s.securityBiometricEnabled = enabled
+            s.securityCredentialId = enabled ? credentialId ?? s.securityCredentialId : null
+          }),
 
           setActiveChannel: (ch) => set(s => {
             s.activeChannel = ch
@@ -704,6 +783,12 @@ export const useStore = create<AppState>()(
             noisePeers: s.noisePeers,
             groupProfiles: s.groupProfiles,
             channelPrefs: s.channelPrefs,
+            onboardingCompleted: s.onboardingCompleted,
+            securityEnabled: s.securityEnabled,
+            securityPinHash: s.securityPinHash,
+            securityPinSalt: s.securityPinSalt,
+            securityBiometricEnabled: s.securityBiometricEnabled,
+            securityCredentialId: s.securityCredentialId,
           }),
         }
       )

@@ -8,10 +8,11 @@ const MOBILE_TABS: Array<{ id: Tab; label: string; icon: string }> = [
   { id: 'chat', label: 'Чат', icon: '💬' },
   { id: 'map', label: 'Карта', icon: '◎' },
   { id: 'nodes', label: 'Узлы', icon: '◈' },
+  { id: 'groups', label: 'Группы', icon: '◉' },
 ]
 
 export function MobileTabBar() {
-  const { tab, setTab, unread, nodes } = useStore()
+  const { tab, setTab, unread, nodes, groupProfiles } = useStore()
 
   const unreadTotal = useMemo(
     () => Object.values(unread).reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0),
@@ -21,16 +22,19 @@ export function MobileTabBar() {
     () => Object.values(nodes).filter(node => node.isOnline).length,
     [nodes],
   )
+  const groupsCount = groupProfiles.length
 
   return (
     <nav className="mobile-tabbar z-40 shrink-0 border-b border-zinc-800 bg-zinc-950/95 px-2 py-1.5 backdrop-blur-md md:hidden">
-      <div className="grid grid-cols-3 gap-1">
+      <div className="grid grid-cols-4 gap-1">
         {MOBILE_TABS.map(item => {
           const isActive = tab === item.id
           const badgeValue = item.id === 'chat'
             ? unreadTotal
             : item.id === 'nodes'
               ? onlineNodes
+              : item.id === 'groups'
+                ? groupsCount
               : null
 
           return (

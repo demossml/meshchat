@@ -42,6 +42,9 @@ export interface ChatMessage {
   networkMsgId?: string
   deliveredAt?: number
   readAt?: number
+  sentAt?: number
+  ackAt?: number
+  sendAttempts?: number
   sendError?: string
   secureMode?: 'noise-dm' | 'e2ee'
   encrypted?: boolean
@@ -67,7 +70,7 @@ export interface MeshtasticPacket {
 
 // ─── UI State ─────────────────────────────────────────────────────
 
-export type Tab = 'chat' | 'map' | 'nodes'
+export type Tab = 'chat' | 'map' | 'nodes' | 'groups'
 
 export type ConnectMode = 'wifi' | 'bluetooth'
 

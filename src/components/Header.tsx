@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 export function Header() {
   const { connected, connecting, activeChannel, tab, nodes,
+          securityEnabled, securityUnlocked, lockSecurity,
           setTab, disconnect } = useStore()
 
   const onlineCount = Object.values(nodes).filter(n => n.isOnline).length
@@ -47,14 +48,14 @@ export function Header() {
       {/* Tabs */}
       <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)} className="ml-0.5 hidden md:block">
         <TabsList className="h-auto gap-1 p-1">
-          {(['chat', 'map', 'nodes'] as const).map(t => (
+          {(['chat', 'map', 'nodes', 'groups'] as const).map(t => (
             <TabsTrigger
               key={t}
               value={t}
               className={clsx('h-7 w-7 p-0 text-[13px] sm:h-8 sm:w-8 sm:text-sm', tab !== t && 'text-zinc-400')}
-              title={t === 'chat' ? 'Чат' : t === 'map' ? 'Карта' : 'Узлы'}
+              title={t === 'chat' ? 'Чат' : t === 'map' ? 'Карта' : t === 'nodes' ? 'Узлы' : 'Группы'}
             >
-              {t === 'chat' ? '💬' : t === 'map' ? '◎' : '◈'}
+              {t === 'chat' ? '💬' : t === 'map' ? '◎' : t === 'nodes' ? '◈' : '◉'}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -64,10 +65,13 @@ export function Header() {
         variant="secondary"
         size="icon"
         className="h-8 w-8 sm:h-9 sm:w-9"
-        onClick={disconnect}
-        title="Отключиться"
+        onClick={() => {
+          if (securityEnabled && securityUnlocked) lockSecurity()
+          else disconnect()
+        }}
+        title={securityEnabled && securityUnlocked ? 'Заблокировать приложение' : 'Отключиться'}
       >
-        ⏻
+        {securityEnabled && securityUnlocked ? '🔒' : '⏻'}
       </Button>
     </header>
   )
