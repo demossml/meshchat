@@ -50,6 +50,8 @@ export function ChatView() {
   const msgs    = messages[activeChannel] ?? []
   const endRef  = useRef<HTMLDivElement>(null)
   const inputRef= useRef<HTMLTextAreaElement>(null)
+  const [isMobileViewport, setIsMobileViewport] = useState(false)
+  const [inputFocused, setInputFocused] = useState(false)
   const dmNoisePeer = dmTarget ? noisePeers[dmTarget.id] : undefined
   const noiseQrPayload = useMemo(() => {
     if (!dmTarget || !dmNoisePeer?.fingerprint) return ''
@@ -76,8 +78,24 @@ export function ChatView() {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [msgs.length])
 
+  useEffect(() => {
+    const update = () => setIsMobileViewport(window.matchMedia('(max-width: 767px)').matches)
+    update()
+    window.addEventListener('resize', update, { passive: true })
+    return () => window.removeEventListener('resize', update)
+  }, [])
+
   /* focus on channel change */
   useEffect(() => { inputRef.current?.focus() }, [activeChannel])
+
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    const next = Math.min(el.scrollHeight, 170)
+    el.style.height = `${Math.max(40, next)}px`
+    el.style.overflowY = el.scrollHeight > 170 ? 'auto' : 'hidden'
+  }, [inputText])
 
   useEffect(() => {
     if (!dmTarget && noiseDmEnabled) setNoiseDmEnabled(false)
@@ -410,7 +428,10 @@ export function ChatView() {
           </Badge>
         </div>
       </div>
-      <div className="flex gap-1.5 overflow-x-auto border-b border-zinc-900 bg-zinc-950 px-2.5 py-1.5 md:hidden">
+      <div className={clsx(
+        'flex gap-1.5 overflow-x-auto border-b border-zinc-900 bg-zinc-950 px-2.5 py-1.5 md:hidden',
+        isMobileViewport && inputFocused && 'hidden',
+      )}>
         {channels.map(ch => {
           const isActive = ch === activeChannel
           const unreadCount = unread[ch] ?? 0
@@ -469,13 +490,19 @@ export function ChatView() {
       </div>
 
       {/* Input */}
-      <div className="chat-composer-wrap flex-shrink-0 border-t border-zinc-800 bg-zinc-950 px-2.5 py-2 sm:px-3 sm:pb-2">
-        {verifyInfo && (
+      <div className={clsx(
+        'chat-composer-wrap chat-composer-mobile flex-shrink-0 border-t border-zinc-800 bg-zinc-950 px-2.5 py-2 sm:px-3 sm:pb-2',
+        isMobileViewport && inputFocused && 'pb-1.5 pt-1.5',
+      )}>
+        {verifyInfo && !(isMobileViewport && inputFocused) && (
           <div className="mb-2 rounded-md border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-[10px] text-zinc-300">
             {verifyInfo}
           </div>
         )}
-        <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-[10px] tracking-[0.04em]">
+        <div className={clsx(
+          'mb-1 flex flex-wrap items-center justify-between gap-2 text-[10px] tracking-[0.04em]',
+          isMobileViewport && inputFocused && 'hidden',
+        )}>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -505,7 +532,7 @@ export function ChatView() {
             <span className="hidden text-zinc-400 min-[430px]:inline">{noiseDmEnabled ? 'Noise XX' : 'AES-GCM'}</span>
           )}
         </div>
-        {showE2EE && (
+        {showE2EE && !(isMobileViewport && inputFocused) && (
           <div className="mb-2 rounded-md border border-zinc-800 bg-zinc-900 p-2">
             <div className="mb-1 text-[10px] tracking-[0.04em] text-zinc-400">E2E ключ (общий пароль для вашей группы)</div>
             <Input
@@ -765,19 +792,24 @@ export function ChatView() {
             value={inputText}
             onChange={e => setInputText(e.target.value)}
             onKeyDown={onKey}
+            onFocus={() => setInputFocused(true)}
+            onBlur={() => setInputFocused(false)}
             placeholder="Введите сообщение…"
             rows={1}
             maxLength={MAX_INPUT_LENGTH}
           />
           <Button
-            className="mb-0.5 h-8 min-w-12 self-end rounded-md bg-zinc-100 px-2.5 py-2 text-[11px] font-semibold tracking-[0.08em] text-zinc-900 sm:px-3"
+            className="mb-0.5 h-9 min-w-14 self-end rounded-md bg-zinc-100 px-2.5 py-2 text-[11px] font-semibold tracking-[0.08em] text-zinc-900 sm:h-8 sm:min-w-12 sm:px-3"
             onClick={() => void handleSend()}
             disabled={!inputText.trim()}
           >
             TX↑
           </Button>
         </div>
-        <div className="flex items-center justify-between px-0.5 pt-1 text-[8px] tracking-[0.04em] text-zinc-600 sm:text-[9px]">
+        <div className={clsx(
+          'flex items-center justify-between px-0.5 pt-1 text-[8px] tracking-[0.04em] text-zinc-600 sm:text-[9px]',
+          isMobileViewport && inputFocused && 'pt-0.5',
+        )}>
           {inputText.length > 0 && <span>{inputText.length}/{MAX_INPUT_LENGTH}</span>}
           <span className="ml-auto hidden sm:inline">
             {noiseDmEnabled
@@ -921,7 +953,7 @@ function MsgBubble({ bubbleId, msg, prev, myId, highlighted, onAvatarClick, onRe
   const encLabel = isNoise ? 'NOISE' : 'E2E'
   const delivery = msg.status ?? (msg.ack ? 'ack' : undefined)
   const deliveryLabel = delivery === 'queued'
-    ? 'QUEUED'
+    ? 'WAIT LINK'
     : delivery === 'sent'
       ? 'SENT'
       : delivery === 'ack'
@@ -1025,16 +1057,18 @@ function MsgBubble({ bubbleId, msg, prev, myId, highlighted, onAvatarClick, onRe
             </span>
           )}
         </div>
-        {isOwn && delivery === 'failed' && (
+        {isOwn && (delivery === 'failed' || (delivery === 'queued' && !!msg.sendError)) && (
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 border-zinc-700 bg-zinc-900 px-2 text-[9px] tracking-[0.06em] text-zinc-300 hover:bg-zinc-800"
-              onClick={onRetry}
-            >
-              RETRY NOW
-            </Button>
+            {delivery === 'failed' && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 border-zinc-700 bg-zinc-900 px-2 text-[9px] tracking-[0.06em] text-zinc-300 hover:bg-zinc-800"
+                onClick={onRetry}
+              >
+                RETRY NOW
+              </Button>
+            )}
             {msg.sendError && (
               <span className="max-w-[220px] truncate text-[9px] text-zinc-500" title={msg.sendError}>
                 {msg.sendError}

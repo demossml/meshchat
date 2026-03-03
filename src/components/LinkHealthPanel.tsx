@@ -101,7 +101,7 @@ export function LinkHealthPanel() {
   }, [badAlertDismissed, badStartedAt, health.hasBad])
 
   return (
-    <section className="border-b border-zinc-800 bg-zinc-950/80 px-2 py-1.5 md:px-3">
+    <section className="link-health-panel border-b border-zinc-800 bg-zinc-950/80 px-2 py-1.5 md:px-3">
       {badAlertVisible && health.hasBad && !badAlertDismissed && (
         <div className="mb-1.5 flex items-center gap-2 rounded border border-zinc-200 bg-zinc-100 px-2 py-1 text-[9px] text-zinc-900">
           <span className="font-semibold tracking-[0.08em]">LINK DEGRADED</span>

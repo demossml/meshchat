@@ -530,6 +530,7 @@ export const useStore = create<AppState>()(
                 msg.readAt = undefined
               }
               if (status === 'failed') msg.sendError = sendError ?? 'send failed'
+              else if (status === 'queued' && sendError) msg.sendError = sendError
               else msg.sendError = undefined
               return
             }

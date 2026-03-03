@@ -15,10 +15,11 @@ import { NoiseDmManager } from '@/lib/noiseDm'
 
 const MAX_RETRIES = 20
 const BASE_DELAY = 1500
-const OUTBOX_MAX_ATTEMPTS = 6
+const OUTBOX_MAX_ATTEMPTS = 999
 const OUTBOX_BASE_DELAY = 1500
-const OUTBOX_MAX_DELAY = 30000
+const OUTBOX_MAX_DELAY = 120000
 const OUTBOX_POLL_MS = 1000
+const OUTBOX_TTL_MS = 45 * 60 * 1000
 const MAX_TEXT_PAYLOAD_BYTES = 228
 const FRAG_PREFIX = 'mcf1'
 const FRAG_CHUNK_BYTES = 170
@@ -219,6 +220,33 @@ function demoReplyText(outbound: string, isDm: boolean): string {
   if (!base) return isDm ? 'Принял.' : 'Принято.'
   if (outbound.length > 48) return base
   return `${base} (${outbound.slice(0, 24)})`
+}
+
+function calcAdaptiveOutboxDelay(nextAttempt: number): number {
+  const state = useStore.getState()
+  const now = Date.now()
+  const recentWindowMs = 20 * 60 * 1000
+  const ownRecent = Object.values(state.messages)
+    .flat()
+    .filter(msg => msg.isOwn && now - msg.ts <= recentWindowMs)
+  const completed = ownRecent.filter(msg => ['ack', 'delivered', 'read', 'failed'].includes(msg.status ?? ''))
+  const failed = completed.filter(msg => msg.status === 'failed').length
+  const loss = completed.length > 0 ? failed / completed.length : 0
+  const queueDepth = state.outbox.length
+
+  const expFactor = Math.min(nextAttempt - 1, 7)
+  let delay = OUTBOX_BASE_DELAY * Math.pow(2, Math.max(0, expFactor))
+  let multiplier = 1
+
+  if (!state.connected) multiplier += 0.7
+  if (queueDepth >= 5) multiplier += 0.35
+  if (queueDepth >= 10) multiplier += 0.45
+  if (loss >= 0.25) multiplier += 0.4
+  if (loss >= 0.45) multiplier += 0.4
+
+  const jitter = 0.85 + Math.random() * 0.3
+  delay = Math.round(delay * multiplier * jitter)
+  return Math.max(OUTBOX_BASE_DELAY, Math.min(OUTBOX_MAX_DELAY, delay))
 }
 
 export function useWebSocket(wsUrl: string | null) {
@@ -553,6 +581,11 @@ export function useWebSocket(wsUrl: string | null) {
   const attemptOutboxDelivery = useCallback(async (clientMsgId: string) => {
     const initial = useStore.getState().outbox.find(entry => entry.clientMsgId === clientMsgId)
     if (!initial || initial.inFlight) return false
+    if (Date.now() - initial.createdAt > OUTBOX_TTL_MS) {
+      setOwnMessageStatus(clientMsgId, 'failed', 'Истек TTL очереди (45 мин)')
+      removeOutbox(clientMsgId)
+      return false
+    }
 
     markOutboxInFlight(clientMsgId, true)
     let finalizeInFlight = true
@@ -594,16 +627,19 @@ export function useWebSocket(wsUrl: string | null) {
       if (!current) return false
 
       const nextAttempt = current.attempts + 1
-      if (!retryable || nextAttempt >= OUTBOX_MAX_ATTEMPTS) {
+      const expired = Date.now() - current.createdAt > OUTBOX_TTL_MS
+      if (!retryable || nextAttempt >= OUTBOX_MAX_ATTEMPTS || expired) {
         setOwnMessageStatus(clientMsgId, 'failed', message)
         removeOutbox(clientMsgId)
-        setError(`Не удалось отправить сообщение: ${message}`)
+        if (!retryable || expired) {
+          setError(`Не удалось отправить сообщение: ${expired ? 'истек TTL очереди' : message}`)
+        }
         finalizeInFlight = false
         return false
       }
 
-      const delay = Math.min(OUTBOX_BASE_DELAY * Math.pow(2, nextAttempt - 1), OUTBOX_MAX_DELAY)
-      setOwnMessageStatus(clientMsgId, 'queued')
+      const delay = calcAdaptiveOutboxDelay(nextAttempt)
+      setOwnMessageStatus(clientMsgId, 'queued', `Дойдет позже · retry через ~${Math.ceil(delay / 1000)}с`)
       scheduleOutboxRetry(clientMsgId, Date.now() + delay, message)
       finalizeInFlight = false
       return false
