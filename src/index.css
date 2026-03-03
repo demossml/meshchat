@@ -71,6 +71,10 @@ html, body { overscroll-behavior: none; }
   z-index: 20;
 }
 
+.chat-scroll-area {
+  overscroll-behavior-y: contain;
+}
+
 @media (max-width: 767px) {
   input,
   textarea,
@@ -86,6 +90,11 @@ html, body { overscroll-behavior: none; }
   :root.keyboard-open .chat-composer-mobile {
     border-top-color: rgba(244, 244, 245, 0.25);
     box-shadow: 0 -6px 20px rgba(0, 0, 0, .25);
+  }
+
+  :root.keyboard-open .chat-scroll-area {
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
   }
 }
 

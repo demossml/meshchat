@@ -85,8 +85,11 @@ export function ChatView() {
     return () => window.removeEventListener('resize', update)
   }, [])
 
-  /* focus on channel change */
-  useEffect(() => { inputRef.current?.focus() }, [activeChannel])
+  /* focus on channel change: desktop only (mobile should not open keyboard unexpectedly) */
+  useEffect(() => {
+    if (isMobileViewport) return
+    inputRef.current?.focus()
+  }, [activeChannel, isMobileViewport])
 
   useEffect(() => {
     const el = inputRef.current
@@ -96,6 +99,15 @@ export function ChatView() {
     el.style.height = `${Math.max(40, next)}px`
     el.style.overflowY = el.scrollHeight > 170 ? 'auto' : 'hidden'
   }, [inputText])
+
+  useEffect(() => {
+    if (!inputFocused) return
+    const t = setTimeout(() => {
+      endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' })
+      if (isMobileViewport) window.scrollTo(0, 0)
+    }, 120)
+    return () => clearTimeout(t)
+  }, [inputFocused, isMobileViewport])
 
   useEffect(() => {
     if (!dmTarget && noiseDmEnabled) setNoiseDmEnabled(false)
@@ -462,7 +474,7 @@ export function ChatView() {
       </div>
 
       {/* Message list */}
-      <div className="flex flex-1 flex-col gap-px overflow-y-auto bg-zinc-950 px-2.5 py-2.5 sm:px-3.5 sm:py-3">
+      <div className="chat-scroll-area flex flex-1 flex-col gap-px overflow-y-auto bg-zinc-950 px-2.5 py-2.5 sm:px-3.5 sm:py-3">
         {msgs.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs tracking-[0.04em] text-zinc-500">
             <div className="mb-2 text-[34px] text-zinc-700">◈</div>
@@ -797,6 +809,10 @@ export function ChatView() {
             placeholder="Введите сообщение…"
             rows={1}
             maxLength={MAX_INPUT_LENGTH}
+            enterKeyHint="send"
+            autoCapitalize="sentences"
+            autoCorrect="on"
+            spellCheck
           />
           <Button
             className="mb-0.5 h-9 min-w-14 self-end rounded-md bg-zinc-100 px-2.5 py-2 text-[11px] font-semibold tracking-[0.08em] text-zinc-900 sm:h-8 sm:min-w-12 sm:px-3"

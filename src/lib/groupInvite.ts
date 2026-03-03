@@ -1,4 +1,5 @@
-const GROUP_PREFIX = 'meshchat-group-v1'
+const GROUP_PREFIX_V1 = 'meshchat-group-v1'
+const GROUP_PREFIX_V2 = 'mg2'
 
 type GroupInvite = {
   name: string
@@ -31,16 +32,37 @@ export function buildGroupInvite(payload: GroupInvite): string {
     channel: payload.channel.trim(),
     key: payload.key.trim(),
   }
-  const json = JSON.stringify(normalized)
-  return `${GROUP_PREFIX}|${toB64Url(json)}`
+
+  // Compact payload to fit offline QR capacity (v5-L) on mobile.
+  const nameEnc = encodeURIComponent(normalized.name)
+  const channelEnc = encodeURIComponent(normalized.channel)
+  const keyEnc = encodeURIComponent(normalized.key)
+  return `${GROUP_PREFIX_V2}|${nameEnc}|${channelEnc}|${keyEnc}`
 }
 
 export function parseGroupInvite(raw: string): GroupInvite | null {
   const trimmed = raw.trim()
   if (!trimmed) return null
-  const [prefix, body] = trimmed.split('|')
-  if (prefix !== GROUP_PREFIX || !body) return null
+  const parts = trimmed.split('|')
+  const prefix = parts[0]
 
+  if (prefix === GROUP_PREFIX_V2) {
+    if (parts.length < 4) return null
+    try {
+      const name = decodeURIComponent(parts[1] ?? '').trim()
+      const channel = decodeURIComponent(parts[2] ?? '').trim()
+      const key = decodeURIComponent(parts.slice(3).join('|')).trim()
+      if (!name || !channel || !key) return null
+      return { name, channel, key }
+    } catch {
+      return null
+    }
+  }
+
+  // Backward compatibility: old base64-json format.
+  if (prefix !== GROUP_PREFIX_V1 || parts.length < 2) return null
+  const body = parts.slice(1).join('|')
+  if (!body) return null
   try {
     const parsed = JSON.parse(fromB64Url(body)) as Partial<GroupInvite>
     const name = parsed.name?.trim() ?? ''

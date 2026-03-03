@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { drawOfflineQrToCanvas } from '@/lib/qrOffline'
+import jsQR from 'jsqr'
 
 type BarcodeDetectorLike = {
   detect: (source: ImageBitmapSource) => Promise<Array<{ rawValue?: string }>>
@@ -38,7 +39,9 @@ export function QrVerifyModal({
   const detectorRef = useRef<BarcodeDetectorLike | null>(null)
   const [manual, setManual] = useState('')
   const [scanError, setScanError] = useState<string | null>(null)
+  const [showError, setShowError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [decodingImage, setDecodingImage] = useState(false)
 
   const hasPayload = useMemo(() => Boolean(payload && payload.trim()), [payload])
 
@@ -47,22 +50,18 @@ export function QrVerifyModal({
     if (!payload || !qrCanvasRef.current) return
     try {
       drawOfflineQrToCanvas(qrCanvasRef.current, payload, 320)
+      setShowError(null)
     } catch {
-      // fallback to text payload only
+      setShowError('QR слишком длинный для офлайн-генерации. Укоротите название/ключ или используйте COPY.')
     }
   }, [mode, open, payload])
 
   useEffect(() => {
     if (!open || mode !== 'scan') return
     const detectorCtor = getBarcodeDetectorCtor()
-    if (!detectorCtor) {
-      setScanError('Сканирование камерой недоступно в этом браузере. Вставьте QR-строку вручную.')
-      return
-    }
-
-    let cancelled = false
-    const detector = new detectorCtor({ formats: ['qr_code'] })
+    const detector = detectorCtor ? new detectorCtor({ formats: ['qr_code'] }) : null
     detectorRef.current = detector
+    let cancelled = false
 
     const stop = () => {
       if (loopRef.current !== null) {
@@ -78,17 +77,40 @@ export function QrVerifyModal({
       if (cancelled) return
       const detectorCurrent = detectorRef.current
       const video = videoRef.current
-      if (!detectorCurrent || !video) return
+      if (!video) return
       if (video.readyState < 2) {
         loopRef.current = requestAnimationFrame(tick)
         return
       }
+      const width = video.videoWidth
+      const height = video.videoHeight
+      if (!width || !height) {
+        loopRef.current = requestAnimationFrame(tick)
+        return
+      }
       try {
-        const results = await detectorCurrent.detect(video)
-        const first = results.find(item => typeof item.rawValue === 'string' && item.rawValue.trim())
-        if (first?.rawValue) {
-          onScan?.(first.rawValue)
-          return
+        if (detectorCurrent) {
+          const results = await detectorCurrent.detect(video)
+          const first = results.find(item => typeof item.rawValue === 'string' && item.rawValue.trim())
+          if (first?.rawValue) {
+            onScan?.(first.rawValue)
+            return
+          }
+        }
+
+        // Fallback decoder for browsers without/with unstable BarcodeDetector.
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, width, height)
+          const img = ctx.getImageData(0, 0, width, height)
+          const decoded = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' })
+          if (decoded?.data?.trim()) {
+            onScan?.(decoded.data.trim())
+            return
+          }
         }
       } catch {
         // ignore frame-level decode errors
@@ -114,7 +136,10 @@ export function QrVerifyModal({
         loopRef.current = requestAnimationFrame(tick)
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'unknown error'
-        setScanError(`Не удалось открыть камеру: ${message}`)
+        const detectorMissingNote = detectorCtor
+          ? ''
+          : ' В этом браузере нет BarcodeDetector, используется jsQR fallback.'
+        setScanError(`Не удалось открыть камеру: ${message}.${detectorMissingNote}`)
       }
     })()
 
@@ -126,6 +151,41 @@ export function QrVerifyModal({
   }, [mode, onScan, open])
 
   if (!open) return null
+
+  const decodeImageFile = async (file: File) => {
+    if (!file) return
+    setDecodingImage(true)
+    setScanError(null)
+    try {
+      const bitmap = await createImageBitmap(file)
+      const canvas = document.createElement('canvas')
+      canvas.width = bitmap.width
+      canvas.height = bitmap.height
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })
+      if (!ctx) throw new Error('canvas context unavailable')
+      ctx.drawImage(bitmap, 0, 0)
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      const decoded = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' })
+      if (decoded?.data?.trim()) {
+        onScan?.(decoded.data.trim())
+        return
+      }
+      if (detectorRef.current) {
+        const results = await detectorRef.current.detect(canvas)
+        const first = results.find(item => typeof item.rawValue === 'string' && item.rawValue.trim())
+        if (first?.rawValue) {
+          onScan?.(first.rawValue)
+          return
+        }
+      }
+      setScanError('QR не найден в изображении. Попробуйте другой ракурс/контраст.')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'unknown error'
+      setScanError(`Не удалось распознать изображение: ${message}`)
+    } finally {
+      setDecodingImage(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-[1200] flex items-end justify-center bg-black/75 p-3 backdrop-blur-[1px] sm:items-center">
@@ -148,6 +208,11 @@ export function QrVerifyModal({
             <div className="mb-2 text-[10px] text-zinc-500">
               {helper ?? 'Попросите собеседника отсканировать этот QR и подтвердить совпадение.'}
             </div>
+            {showError && (
+              <div className="mb-2 rounded border border-zinc-600 bg-zinc-800 px-2 py-1 text-[10px] text-zinc-200">
+                {showError}
+              </div>
+            )}
             <Textarea
               readOnly
               value={payload}
@@ -180,6 +245,22 @@ export function QrVerifyModal({
               <video ref={videoRef} className="h-[220px] w-full object-cover" playsInline muted />
             </div>
             {scanError && <div className="mb-2 text-[10px] text-zinc-400">{scanError}</div>}
+            <div className="mb-2 flex items-center gap-2">
+              <label className="inline-flex h-7 cursor-pointer items-center rounded border border-zinc-700 bg-zinc-900 px-2 text-[10px] text-zinc-300">
+                {decodingImage ? 'DECODING…' : 'SCAN FROM IMAGE'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) void decodeImageFile(file)
+                    e.currentTarget.value = ''
+                  }}
+                />
+              </label>
+              <span className="text-[9px] text-zinc-500">Оффлайн fallback для iPhone/Android</span>
+            </div>
             <div className="mb-1 text-[10px] tracking-[0.06em] text-zinc-500">ИЛИ ВСТАВЬТЕ QR СТРОКУ</div>
             <Textarea
               value={manual}
